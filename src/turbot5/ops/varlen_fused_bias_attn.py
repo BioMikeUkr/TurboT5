@@ -118,8 +118,9 @@ def flash_attn_v2_bwd_bias(o, do, q, k, v, bias_weights, L,
     dk = torch.empty_like(k)
     dv = torch.empty_like(v)
 
+    # bf16 is not supported in atomic_add, so we always use fp32 for db
     if has_bias:
-        db = torch.zeros((NUM_BUCKETS, H), dtype=bias_weights.dtype, device=bias_weights.device)
+        db = torch.zeros((NUM_BUCKETS, H), dtype=torch.float32, device=bias_weights.device)
     else:
         db = None
 
@@ -611,7 +612,9 @@ def _bwd_kv_bias_kernel(
         # calculate dw
         if HAS_BIAS:
             db_ptrs = DB+bucket_offs
-            tl.atomic_add(db_ptrs, ds, mask=relative_buckets < NUM_BUCKETS)
+            # BF16 is not supported in atomic_add, always cast to FP32
+            ds_atomic = ds.to(tl.float32)
+            tl.atomic_add(db_ptrs, ds_atomic, mask=relative_buckets < NUM_BUCKETS)
 
         # increment pointers
         q_ptrs += BLOCK_M * stride_qz

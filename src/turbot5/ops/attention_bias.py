@@ -119,7 +119,9 @@ def bias_kernel_backward(
         d_out_values = tl.load(d_out_ptrs, mask=o_mask, other=0.0)
 
         d_weights_ptrs = d_weights + bucket_offs
-        tl.atomic_add(d_weights_ptrs, d_out_values, mask=relative_buckets[:, :, None] < NUM_BUCKETS)
+        # BF16 is not supported in atomic_add, cast to FP32
+        d_out_values_atomic = d_out_values.to(tl.float32)
+        tl.atomic_add(d_weights_ptrs, d_out_values_atomic, mask=relative_buckets[:, :, None] < NUM_BUCKETS)
 
 
 class BiasOp(torch.autograd.Function):
@@ -155,8 +157,9 @@ class BiasOp(torch.autograd.Function):
         M, N, NH = ctx.M, ctx.N, ctx.NH
         BIDIRECTIONAL, NUM_BUCKETS, MAX_DISTANCE = ctx.BIDIRECTIONAL, ctx.NUM_BUCKETS, ctx.MAX_DISTANCE
         dtype = ctx.dtype
-
-        d_weights = torch.zeros_like(weights)
+        
+        # bf16 gradients are accumulated in float32
+        d_weights = torch.zeros_like(weights, dtype=torch.float32)
 
         # Config
         BLOCK_SIZE_N = 32
