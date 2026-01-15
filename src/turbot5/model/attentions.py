@@ -359,8 +359,10 @@ class T5TritonBasicAttention(T5Attention):
             # we want only the last query position bias
             if past_key_value is not None:
                 position_bias = position_bias[:, :, -hidden_states.size(1) :, :]
+                
             if mask is not None:
-                position_bias = position_bias + mask  # (batch_size, n_heads, seq_length, key_length)
+                mask = mask.unsqueeze(1).unsqueeze(2)
+                position_bias = position_bias + mask
 
         if self.pruned_heads:
             mask = torch.ones(position_bias.shape[1])
