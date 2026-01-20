@@ -782,9 +782,9 @@ class T5EncoderForMaskedLM(T5PreTrainedModel):
         self.lm_head = nn.Linear(config.d_model, config.vocab_size, bias=False)
 
         self.post_init()
-        
+
         self.encoder.embed_tokens = self.shared
-        
+
         if config.tie_word_embeddings:
             self.lm_head.weight = self.shared.weight
 
@@ -821,8 +821,112 @@ class T5EncoderForMaskedLM(T5PreTrainedModel):
         **kwargs,
     ) -> tuple[torch.FloatTensor] | BaseModelOutput:
         """
-        Forward pass through encoder only. 
+        Forward pass through encoder only.
         LM head is NOT applied here - use model.lm_head() manually in compute_loss.
+        """
+        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+
+        encoder_outputs = self.encoder(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            inputs_embeds=inputs_embeds,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict,
+        )
+
+        return encoder_outputs
+
+
+class T5EncoderForContextPrediction(T5PreTrainedModel):
+    """
+    T5 Encoder for Context Prediction task.
+
+    From a center token's representation, predicts the masked left and right neighbor tokens
+    using two separate projection heads (left_projection and right_projection).
+
+    The projections map: d_model -> d_model -> vocab_size
+    """
+    _tied_weights_keys = {
+        "lm_head.weight": "shared.weight",
+        "encoder.embed_tokens.weight": "shared.weight",
+    }
+    _keys_to_ignore_on_load_unexpected = [r"decoder"]
+
+    def __init__(self, config: T5Config):
+        super().__init__(config)
+        self.model_dim = config.d_model
+
+        self.shared = nn.Embedding(config.vocab_size, config.d_model)
+
+        encoder_config = config
+        encoder_config.use_cache = False
+        encoder_config.is_encoder_decoder = False
+        encoder_config.is_decoder = False
+        self.encoder = T5Stack(encoder_config)
+
+        # Two projection heads: center -> left neighbor, center -> right neighbor
+        # Each projection: d_model -> d_model
+        self.left_projection = nn.Linear(config.d_model, config.d_model, bias=False)
+        self.right_projection = nn.Linear(config.d_model, config.d_model, bias=False)
+        self.lm_head = nn.Linear(config.d_model, config.vocab_size, bias=False)
+
+        self.post_init()
+
+        self.encoder.embed_tokens = self.shared
+
+        if config.tie_word_embeddings:
+            self.lm_head.weight = self.shared.weight
+
+    def get_input_embeddings(self):
+        return self.shared
+
+    def set_input_embeddings(self, new_embeddings):
+        self.shared = new_embeddings
+        self.encoder.embed_tokens = new_embeddings
+
+        if self.config.tie_word_embeddings:
+            self.lm_head.weight = self.shared.weight
+
+    def get_output_embeddings(self):
+        return self.lm_head
+
+    def set_output_embeddings(self, new_embeddings):
+        self.lm_head = new_embeddings
+
+    def tie_weights(self):
+        if self.config.tie_word_embeddings:
+            self._tie_or_clone_weights(self.lm_head, self.shared)
+
+    def _init_projection_weights(self):
+        """Initialize projection weights with small values to avoid NaN."""
+        factor = 0.02
+        for module in [self.left_projection, self.right_projection]:
+            if isinstance(module, nn.Linear):
+                nn.init.xavier_uniform_(module.weight, gain=factor)
+                if module.bias is not None:
+                    nn.init.zeros_(module.bias)
+
+    def get_left_projection(self):
+        return self.left_projection
+
+    def get_right_projection(self):
+        return self.right_projection
+
+    def forward(
+        self,
+        input_ids: torch.LongTensor | None = None,
+        attention_mask: torch.FloatTensor | None = None,
+        inputs_embeds: torch.FloatTensor | None = None,
+        output_attentions: bool | None = None,
+        output_hidden_states: bool | None = None,
+        return_dict: bool | None = None,
+        **kwargs,
+    ) -> tuple[torch.FloatTensor] | BaseModelOutput:
+        """
+        Forward pass through encoder only.
+        Projection heads are NOT applied here - use model.left_projection() and
+        model.right_projection() manually in compute_loss.
         """
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 

@@ -1,9 +1,10 @@
 from .heads.t5_heads import (
-    T5ForConditionalGeneration, 
-    T5ForQuestionAnswering, 
-    T5ForSequenceClassification, 
-    T5ForTokenClassification, 
-    T5EncoderForMaskedLM
+    T5ForConditionalGeneration,
+    T5ForQuestionAnswering,
+    T5ForSequenceClassification,
+    T5ForTokenClassification,
+    T5EncoderForMaskedLM,
+    T5EncoderForContextPrediction,
 )
 
 from .heads.encoder_heads import (
@@ -21,6 +22,7 @@ __ALL__ = [
     "T5ForSequenceClassification",
     "T5ForTokenClassification",
     "T5EncoderForMaskedLM",
+    "T5EncoderForContextPrediction",
     "T5EncoderForQuestionAnswering",
     "T5EncoderForTextClassification",
 ]
